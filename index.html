@@ -15,18 +15,14 @@
       <p class="subtitle">第一次用需要設定數據庫</p>
       <div class="setup-form">
         <div>
-          <label>Supabase Project URL</label>
-          <input type="text" id="setup-url" placeholder="https://xxxx.supabase.co" autocapitalize="off">
-        </div>
-        <div>
-          <label>Supabase anon key</label>
-          <input type="password" id="setup-key" placeholder="eyJhbGciOi..." autocapitalize="off">
+          <label>Cloudflare Worker URL</label>
+          <input type="text" id="setup-url" placeholder="https://xxxx.workers.dev" autocapitalize="off">
         </div>
         <button id="setup-save" class="btn btn-primary">儲存並開始</button>
         <p id="setup-error" class="error hidden"></p>
       </div>
       <div class="setup-tip">
-        💡 去 <b>supabase.com</b> 免費開一個 project，撳「New project」，入去之後喺 <b>Project Settings → API</b> 度攞 URL 同 anon key。
+        💡 喺 <b>cloudflare.com</b> 免費開 account，整一個 Worker，貼上 <b>cloudflare-worker/worker.js</b> 嘅內容，加一個名為 <b>GITHUB_TOKEN</b> 嘅 secret，再撳 Deploy。然後攞返佢俾你嘅 <b>*.workers.dev</b> 網址貼喺上面。
       </div>
     </div>
   </div>
@@ -178,7 +174,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,7 @@
+name = "restaurant-clock-api"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Set the GitHub token via:
+#   wrangler secret put GITHUB_TOKEN
+# OR in the Cloudflare dashboard: Worker > Settings > Variables > Secrets

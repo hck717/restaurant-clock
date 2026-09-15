@@ -1,13 +1,13 @@
 (() => {
   const ADMIN_PIN = "0000";
-  const LS_CONFIG = "rc_supabase_config";
+  const LS_CONFIG = "rc_worker_config";
   const LS_SESSION = "rc_session";
 
   let config = null;
-  let supabase = null;
-  let employees = [];
+  let state = { employees: [], records: [] };
   let currentEmpId = null;
   let todayTimer = null;
+  let saveChain = Promise.resolve();
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -37,6 +37,7 @@
   }
 
   function fmtHours(h) {
+    if (isNaN(h)) return "—";
     const hrs = Math.floor(h);
     const mins = Math.round((h - hrs) * 60);
     if (mins === 0) return `${hrs} 個鐘`;
@@ -49,6 +50,10 @@
     if (el) el.classList.add("active");
   }
 
+  function initial(name) {
+    return (name || "?").trim().charAt(0).toUpperCase();
+  }
+
   // ---- CONFIG / SETUP ----
   function loadConfig() {
     try {
@@ -59,85 +64,69 @@
     return config;
   }
 
-  function initSupabase() {
-    supabase = window.supabase.createClient(config.url, config.anonKey);
-  }
-
   function showSetupScreen() {
     if (config) {
       $("#setup-url").value = config.url;
-      $("#setup-key").value = config.anonKey;
     }
     showScreen("setup-screen");
   }
 
   $("#setup-save").onclick = async () => {
     const url = $("#setup-url").value.trim();
-    const key = $("#setup-key").value.trim();
     const err = $("#setup-error");
 
-    if (!url || !key) {
-      err.textContent = "請填寫 Supabase URL 同 anon key";
+    if (!url) {
+      err.textContent = "請填寫 Cloudflare Worker 嘅 URL";
       err.classList.remove("hidden");
       return;
     }
 
-    config = { url, anonKey: key };
+    config = { url };
     localStorage.setItem(LS_CONFIG, JSON.stringify(config));
 
     try {
-      supabase = window.supabase.createClient(url, key);
-      await loadEmployees();
+      await loadData();
       enterApp();
     } catch (e) {
-      err.textContent = "連接唔到 Supabase，請檢查 URL 同 key";
+      err.textContent = "連接唔到 Worker，請檢查 URL";
       err.classList.remove("hidden");
     }
   };
 
-  // ---- SUPABASE DATA ----
-  async function loadEmployees() {
-    const { data, error } = await supabase
-      .from("employees")
-      .select("id, name, pin")
-      .order("name");
-    if (error) throw error;
-    employees = data || [];
+  // ---- WORKER DATA ----
+  async function loadData() {
+    const res = await fetch(config.url, { method: "GET" });
+    if (!res.ok) throw new Error("load failed");
+    const data = await res.json();
+    state.employees = Array.isArray(data.employees) ? data.employees : [];
+    state.records = Array.isArray(data.records) ? data.records : [];
   }
 
-  async function loadMyRecords(empId) {
-    const { data, error } = await supabase
-      .from("records")
-      .select("id, date, clock_in, clock_out")
-      .eq("employee_id", empId);
-    if (error) throw error;
-    return data || [];
-  }
-
-  async function upsertClock(empId, date, fields) {
-    const { data, error } = await supabase
-      .from("records")
-      .upsert(
-        { employee_id: empId, date, ...fields },
-        { onConflict: "employee_id,date" }
-      );
-    if (error) throw error;
-    return data;
-  }
-
-  function initial(name) {
-    return (name || "?").trim().charAt(0).toUpperCase();
+  function saveData() {
+    saveChain = saveChain.then(async () => {
+      try {
+        const res = await fetch(config.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(state),
+        });
+        if (!res.ok) throw new Error("save failed");
+      } catch (e) {
+        console.warn("Save failed, will retry on next change", e);
+      }
+    });
+    return saveChain;
   }
 
   // ---- LOGIN ----
   function renderEmployees() {
     const grid = $("#employee-list");
     grid.innerHTML = "";
-    if (employees.length === 0) {
+    if (state.employees.length === 0) {
       grid.innerHTML = '<p style="color:var(--text-secondary)">暫時未有員工，請聯絡管理員</p>';
       return;
     }
-    employees.forEach((emp) => {
+    state.employees.forEach((emp) => {
       const btn = document.createElement("button");
       btn.className = "emp-btn";
       const avatar = document.createElement("div");
@@ -171,7 +160,7 @@
   };
 
   $("#pin-confirm").onclick = () => {
-    const emp = employees.find((e) => e.id === currentEmpId);
+    const emp = state.employees.find((e) => e.id === currentEmpId);
     if (emp && emp.pin === $("#pin-input").value) {
       $("#pin-section").classList.add("hidden");
       $("#employee-list").classList.remove("hidden");
@@ -218,28 +207,23 @@
   function renderAdminList() {
     const list = $("#admin-employee-list");
     list.innerHTML = "";
-    if (employees.length === 0) {
+    if (state.employees.length === 0) {
       list.innerHTML = '<p style="color:var(--text-secondary);padding:8px">未有員工</p>';
       return;
     }
-    employees.forEach((emp) => {
+    state.employees.forEach((emp) => {
       const div = document.createElement("div");
       div.className = "admin-emp-item";
       div.innerHTML = `<span>${emp.name}</span>`;
       const delBtn = document.createElement("button");
       delBtn.className = "btn btn-danger btn-sm";
       delBtn.textContent = "刪除";
-      delBtn.onclick = async () => {
+      delBtn.onclick = () => {
         if (confirm(`確定要刪除「${emp.name}」？`)) {
-          const { error } = await supabase
-            .from("records")
-            .delete()
-            .eq("employee_id", emp.id);
-          if (!error) {
-            await supabase.from("employees").delete().eq("id", emp.id);
-            employees = employees.filter((e) => e.id !== emp.id);
-            renderAdminList();
-          }
+          state.employees = state.employees.filter((e) => e.id !== emp.id);
+          state.records = state.records.filter((r) => r.employeeId !== emp.id);
+          saveData();
+          renderAdminList();
         }
       };
       div.appendChild(delBtn);
@@ -247,7 +231,7 @@
     });
   }
 
-  $("#add-employee").onclick = async () => {
+  $("#add-employee").onclick = () => {
     const name = $("#new-name").value.trim();
     const pin = $("#new-pin").value.trim();
     const err = $("#add-error");
@@ -262,22 +246,14 @@
       err.classList.remove("hidden");
       return;
     }
-    if (employees.some((e) => e.name === name)) {
+    if (state.employees.some((e) => e.name === name)) {
       err.textContent = "已經有同名員工";
       err.classList.remove("hidden");
       return;
     }
 
-    const { data, error } = await supabase
-      .from("employees")
-      .insert({ id: Date.now().toString(), name, pin })
-      .select();
-    if (error) {
-      err.textContent = "加唔到，可能有連線問題";
-      err.classList.remove("hidden");
-      return;
-    }
-    employees.push(data[0]);
+    state.employees.push({ id: Date.now().toString(), name, pin });
+    saveData();
     renderAdminList();
     $("#new-name").value = "";
     $("#new-pin").value = "";
@@ -294,49 +270,39 @@
   };
 
   // ---- CSV EXPORT ----
-  $("#export-csv").onclick = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("records")
-        .select("date, employee_id, clock_in, clock_out");
-      if (error) throw error;
-
-      const allRecs = data || [];
-      if (allRecs.length === 0) {
-        alert("暫時冇記錄可以匯出");
-        return;
-      }
-
-      const empMap = {};
-      employees.forEach((e) => { empMap[e.id] = e.name; });
-
-      const sorted = [...allRecs].sort((a, b) => {
-        const cmp = a.date.localeCompare(b.date);
-        if (cmp !== 0) return cmp;
-        return (a.clock_in || "").localeCompare(b.clock_in || "");
-      });
-
-      const header = "日期,員工,上班時間,下班時間,工時(小時)";
-      const rows = sorted.map((r) => {
-        const name = empMap[r.employee_id] || "已刪除";
-        let hours = "";
-        if (r.clock_in && r.clock_out) {
-          hours = calcHours(r.clock_in, r.clock_out).toFixed(2);
-        }
-        return `${r.date},${name},${fmtTime(r.clock_in)},${fmtTime(r.clock_out)},${hours}`;
-      });
-
-      const csv = "\uFEFF" + header + "\n" + rows.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `打卡記錄_${todayStr()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert("匯出失敗，請檢查連線");
+  $("#export-csv").onclick = () => {
+    if (state.records.length === 0) {
+      alert("暫時冇記錄可以匯出");
+      return;
     }
+
+    const empMap = {};
+    state.employees.forEach((e) => { empMap[e.id] = e.name; });
+
+    const sorted = [...state.records].sort((a, b) => {
+      const cmp = a.date.localeCompare(b.date);
+      if (cmp !== 0) return cmp;
+      return (a.clockIn || "").localeCompare(b.clockIn || "");
+    });
+
+    const header = "日期,員工,上班時間,下班時間,工時(小時)";
+    const rows = sorted.map((r) => {
+      const name = empMap[r.employeeId] || "已刪除";
+      let hours = "";
+      if (r.clockIn && r.clockOut) {
+        hours = calcHours(r.clockIn, r.clockOut).toFixed(2);
+      }
+      return `${r.date},${name},${fmtTime(r.clockIn)},${fmtTime(r.clockOut)},${hours}`;
+    });
+
+    const csv = "\uFEFF" + header + "\n" + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `打卡記錄_${todayStr()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ---- MAIN APP ----
@@ -388,16 +354,13 @@
     const noRec = $("#no-today");
     container.innerHTML = "";
 
-    let todayRecs;
     try {
-      const { data } = await supabase
-        .from("records")
-        .select("employee_id, date, clock_in, clock_out")
-        .eq("date", today);
-      todayRecs = data || [];
+      await loadData();
     } catch {
-      todayRecs = [];
+      // keep stale data on network failure
     }
+
+    const todayRecs = state.records.filter((r) => r.date === today);
 
     if (todayRecs.length === 0) {
       noRec.classList.remove("hidden");
@@ -406,16 +369,16 @@
     noRec.classList.add("hidden");
 
     const empMap = {};
-    employees.forEach((e) => { empMap[e.id] = e.name; });
+    state.employees.forEach((e) => { empMap[e.id] = e.name; });
 
-    const nameSorted = todayRecs.sort((a, b) => {
-      const na = empMap[a.employee_id] || "";
-      const nb = empMap[b.employee_id] || "";
+    const nameSorted = [...todayRecs].sort((a, b) => {
+      const na = empMap[a.employeeId] || "";
+      const nb = empMap[b.employeeId] || "";
       return na.localeCompare(nb, "zh-Hant");
     });
 
     nameSorted.forEach((r) => {
-      const name = empMap[r.employee_id] || "已刪除";
+      const name = empMap[r.employeeId] || "已刪除";
       const card = document.createElement("div");
       card.className = "today-card";
 
@@ -436,10 +399,10 @@
 
       const timesEl = document.createElement("div");
       timesEl.className = "today-card-times";
-      if (r.clock_in && r.clock_out) {
-        timesEl.textContent = `${fmtTime(r.clock_in)} → ${fmtTime(r.clock_out)}`;
-      } else if (r.clock_in) {
-        timesEl.textContent = `${fmtTime(r.clock_in)} → 處理中…`;
+      if (r.clockIn && r.clockOut) {
+        timesEl.textContent = `${fmtTime(r.clockIn)} → ${fmtTime(r.clockOut)}`;
+      } else if (r.clockIn) {
+        timesEl.textContent = `${fmtTime(r.clockIn)} → 處理中…`;
       } else {
         timesEl.textContent = "尚未打卡";
       }
@@ -454,15 +417,15 @@
       hoursEl.className = "today-hours";
       const statusEl = document.createElement("div");
 
-      if (r.clock_in && !r.clock_out) {
-        const h = calcHours(r.clock_in, null);
+      if (r.clockIn && !r.clockOut) {
+        const h = calcHours(r.clockIn, null);
         hoursEl.textContent = fmtHours(h);
         hoursEl.classList.add("working");
         card.classList.add("working");
         statusEl.className = "today-status st-working";
         statusEl.textContent = "返緊工";
-      } else if (r.clock_in && r.clock_out) {
-        const h = calcHours(r.clock_in, r.clock_out);
+      } else if (r.clockIn && r.clockOut) {
+        const h = calcHours(r.clockIn, r.clockOut);
         hoursEl.textContent = fmtHours(h);
         hoursEl.classList.add("done");
         card.classList.add("done");
@@ -487,7 +450,7 @@
   $("#today-refresh").onclick = renderToday;
 
   // ---- CLOCK TAB ----
-  async function renderClockTab() {
+  function renderClockTab() {
     const today = todayStr();
     const weekday = ["日", "一", "二", "三", "四", "五", "六"];
     const d = new Date();
@@ -501,81 +464,62 @@
 
     btn.classList.remove("clocked-in", "done");
 
-    let todayRec;
-    try {
-      const { data } = await supabase
-        .from("records")
-        .select("id, date, clock_in, clock_out")
-        .eq("employee_id", currentEmpId)
-        .eq("date", today)
-        .single();
-      todayRec = data;
-    } catch {
-      todayRec = null;
-    }
+    const todayRec = state.records.find(
+      (r) => r.employeeId === currentEmpId && r.date === today
+    );
 
     if (!todayRec) {
       status.textContent = "尚未打卡";
       time.textContent = "—";
       btnText.textContent = "上班";
       msg.textContent = "撳下面個掣開始返工";
-    } else if (todayRec.clock_in && !todayRec.clock_out) {
+    } else if (todayRec.clockIn && !todayRec.clockOut) {
       status.textContent = "已上班";
-      const h = calcHours(todayRec.clock_in, null);
-      time.innerHTML = `${fmtTime(todayRec.clock_in)}<br><span style="font-size:20px;color:var(--success)">已做 ${fmtHours(h)}</span>`;
+      const h = calcHours(todayRec.clockIn, null);
+      time.innerHTML = `${fmtTime(todayRec.clockIn)}<br><span style="font-size:20px;color:var(--success)">已做 ${fmtHours(h)}</span>`;
       btnText.textContent = "下班";
       btn.classList.add("clocked-in");
       msg.textContent = "撳下面個掣放工";
     } else {
       status.textContent = "今日已完成打卡";
-      const h = calcHours(todayRec.clock_in, todayRec.clock_out);
-      time.innerHTML = `${fmtTime(todayRec.clock_in)} → ${fmtTime(todayRec.clock_out)}<br><span style="font-size:20px">共 ${fmtHours(h)}</span>`;
+      const h = calcHours(todayRec.clockIn, todayRec.clockOut);
+      time.innerHTML = `${fmtTime(todayRec.clockIn)} → ${fmtTime(todayRec.clockOut)}<br><span style="font-size:20px">共 ${fmtHours(h)}</span>`;
       btnText.textContent = "已完成";
       btn.classList.add("done");
       msg.textContent = "聽日再見！";
     }
   }
 
-  $("#clock-btn").onclick = async () => {
+  $("#clock-btn").onclick = () => {
     const today = todayStr();
     const btn = $("#clock-btn");
     if (btn.classList.contains("done")) return;
 
-    try {
-      const { data } = await supabase
-        .from("records")
-        .select("clock_in, clock_out")
-        .eq("employee_id", currentEmpId)
-        .eq("date", today)
-        .maybeSingle();
-      const todayRec = data;
+    let todayRec = state.records.find(
+      (r) => r.employeeId === currentEmpId && r.date === today
+    );
 
-      if (!todayRec) {
-        await upsertClock(currentEmpId, today, {
-          clock_in: new Date().toISOString(),
-          clock_out: null,
-        });
-        $("#clock-msg").textContent = "✅ 已打上班卡！";
-      } else if (todayRec.clock_in && !todayRec.clock_out) {
-        await upsertClock(currentEmpId, today, {
-          clock_in: todayRec.clock_in,
-          clock_out: new Date().toISOString(),
-        });
-        $("#clock-msg").textContent = "✅ 已打下班卡！辛苦了！";
-      } else {
-        return;
-      }
-    } catch (e) {
-      $("#clock-msg").textContent = "❌ 打卡失敗，請檢查網絡";
+    if (!todayRec) {
+      state.records.push({
+        employeeId: currentEmpId,
+        date: today,
+        clockIn: new Date().toISOString(),
+        clockOut: null,
+      });
+      $("#clock-msg").textContent = "✅ 已打上班卡！";
+    } else if (todayRec.clockIn && !todayRec.clockOut) {
+      todayRec.clockOut = new Date().toISOString();
+      $("#clock-msg").textContent = "✅ 已打下班卡！辛苦了！";
+    } else {
       return;
     }
 
-    setTimeout(renderClockTab, 800);
-    switchTab("clock");
+    saveData();
+    setTimeout(renderClockTab, 500);
   };
 
   // ---- RECORDS TAB ----
-  async function renderRecords(period) {
+  function renderRecords(period) {
     if (!period) period = "week";
     const today = new Date();
     let from, to;
@@ -600,20 +544,18 @@
     const fromStr = from.toLocaleDateString("sv-SE");
     const toStr = to.toLocaleDateString("sv-SE");
 
+    const empRecs = state.records
+      .filter(
+        (r) =>
+          r.employeeId === currentEmpId &&
+          r.date >= fromStr &&
+          r.date <= toStr
+      )
+      .sort((a, b) => b.date.localeCompare(a.date));
+
     const tbody = $("#records-body");
     const noRec = $("#no-records");
     tbody.innerHTML = "";
-
-    let empRecs = [];
-    try {
-      const { data } = await supabase
-        .from("records")
-        .select("date, clock_in, clock_out")
-        .eq("employee_id", currentEmpId)
-        .gte("date", fromStr)
-        .lte("date", toStr);
-      empRecs = (data || []).sort((a, b) => b.date.localeCompare(a.date));
-    } catch {}
 
     if (empRecs.length === 0) {
       noRec.classList.remove("hidden");
@@ -624,13 +566,13 @@
     empRecs.forEach((r) => {
       const tr = document.createElement("tr");
       let hours = "—";
-      if (r.clock_in && r.clock_out) {
-        hours = fmtHours(calcHours(r.clock_in, r.clock_out));
+      if (r.clockIn && r.clockOut) {
+        hours = fmtHours(calcHours(r.clockIn, r.clockOut));
       }
       tr.innerHTML = `
         <td>${fmtDate(r.date)}</td>
-        <td>${fmtTime(r.clock_in)}</td>
-        <td>${fmtTime(r.clock_out)}</td>
+        <td>${fmtTime(r.clockIn)}</td>
+        <td>${fmtTime(r.clockOut)}</td>
         <td>${hours}</td>
       `;
       tbody.appendChild(tr);
@@ -663,12 +605,11 @@
 
   // ---- ENTRY ----
   async function enterApp() {
-    await loadEmployees();
     renderEmployees();
 
     const session = JSON.parse(localStorage.getItem(LS_SESSION) || "null");
     if (session && session.empId) {
-      const emp = employees.find((e) => e.id === session.empId);
+      const emp = state.employees.find((e) => e.id === session.empId);
       if (emp) {
         loginAs(emp);
         return;
@@ -679,13 +620,11 @@
 
   // ---- INIT ----
   const cfg = loadConfig();
-  if (cfg && cfg.url && cfg.anonKey) {
-    try {
-      supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
-      enterApp();
-    } catch (e) {
-      showSetupScreen();
-    }
+  if (cfg && cfg.url) {
+    config = cfg;
+    loadData()
+      .then(enterApp)
+      .catch(() => showSetupScreen());
   } else {
     showSetupScreen();
   }
