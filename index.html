@@ -2,14 +2,39 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>員工打卡系統</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Login Screen -->
-  <div id="login-screen" class="screen active">
+  <!-- Setup Screen (first time) -->
+  <div id="setup-screen" class="screen">
     <div class="login-card">
+      <div class="login-logo">🍜</div>
+      <h1>連接數據庫</h1>
+      <p class="subtitle">第一次用需要設定數據庫</p>
+      <div class="setup-form">
+        <div>
+          <label>Supabase Project URL</label>
+          <input type="text" id="setup-url" placeholder="https://xxxx.supabase.co" autocapitalize="off">
+        </div>
+        <div>
+          <label>Supabase anon key</label>
+          <input type="password" id="setup-key" placeholder="eyJhbGciOi..." autocapitalize="off">
+        </div>
+        <button id="setup-save" class="btn btn-primary">儲存並開始</button>
+        <p id="setup-error" class="error hidden"></p>
+      </div>
+      <div class="setup-tip">
+        💡 去 <b>supabase.com</b> 免費開一個 project，撳「New project」，入去之後喺 <b>Project Settings → API</b> 度攞 URL 同 anon key。
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen">
+    <div class="login-card">
+      <div class="login-logo">🍜</div>
       <h1>員工打卡系統</h1>
       <p class="subtitle">請揀選你嘅名</p>
       <div id="employee-list" class="employee-grid"></div>
@@ -32,6 +57,7 @@
   <!-- Admin Login -->
   <div id="admin-login-screen" class="screen">
     <div class="login-card">
+      <div class="login-logo">🔧</div>
       <h1>管理員登入</h1>
       <div class="pin-input-group">
         <input type="password" id="admin-pin" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="管理員密碼">
@@ -69,20 +95,23 @@
         <p style="color:var(--text-secondary);font-size:14px;margin-bottom:12px">將所有打卡記錄匯出為 CSV 檔案，可以喺 Excel 開</p>
         <button id="export-csv" class="btn btn-primary">匯出 CSV</button>
       </div>
-      <button id="back-to-login" class="btn btn-secondary" style="margin-top:16px">返回登入頁</button>
+      <button id="back-to-login" class="btn btn-secondary" style="margin-top:8px">返回登入頁</button>
     </div>
   </div>
 
   <!-- Main App (after login) -->
   <div id="main-screen" class="screen">
     <div class="main-header">
-      <span id="greeting"></span>
+      <div class="main-header-left">
+        <div class="main-avatar" id="main-avatar"></div>
+        <span id="greeting"></span>
+      </div>
       <button id="logout-btn" class="btn btn-secondary btn-sm">登出</button>
     </div>
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" data-tab="today">今日概覽</button>
+      <button class="tab active" data-tab="today">今日</button>
       <button class="tab" data-tab="clock">打卡</button>
       <button class="tab" data-tab="records">記錄</button>
     </div>
@@ -92,10 +121,10 @@
       <div class="records-section">
         <div class="today-header">
           <h2 id="today-summary-date"></h2>
-          <button id="today-refresh" class="btn btn-secondary btn-sm">重新整理</button>
+          <button id="today-refresh" class="btn btn-secondary btn-sm">🔄 重載</button>
         </div>
         <div id="today-employees" class="today-list"></div>
-        <p id="no-today" class="no-records hidden">今日暫時冇員工打卡</p>
+        <p id="no-today" class="no-records hidden">今日暫時冇人打卡</p>
       </div>
     </div>
 
@@ -107,9 +136,12 @@
           <p id="clock-status"></p>
           <p id="clock-time" class="clock-time"></p>
         </div>
-        <button id="clock-btn" class="clock-btn">
-          <span id="clock-btn-text">上班</span>
-        </button>
+        <div class="clock-btn-wrap">
+          <div class="clock-btn-ring"></div>
+          <button id="clock-btn" class="clock-btn">
+            <span id="clock-btn-text">上班</span>
+          </button>
+        </div>
         <p id="clock-msg" class="clock-msg"></p>
       </div>
     </div>
@@ -133,8 +165,8 @@
             <thead>
               <tr>
                 <th>日期</th>
-                <th>上班時間</th>
-                <th>下班時間</th>
+                <th>上班</th>
+                <th>下班</th>
                 <th>時數</th>
               </tr>
             </thead>
@@ -146,6 +178,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
