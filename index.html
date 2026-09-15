@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>員工打卡系統</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <h1>員工打卡系統</h1>
+      <p class="subtitle">請揀選你嘅名</p>
+      <div id="employee-list" class="employee-grid"></div>
+      <div id="pin-section" class="pin-section hidden">
+        <p class="pin-label">歡迎，<span id="selected-name"></span></p>
+        <p class="pin-sublabel">請輸入密碼</p>
+        <div class="pin-input-group">
+          <input type="password" id="pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="····">
+        </div>
+        <div class="pin-actions">
+          <button id="pin-cancel" class="btn btn-secondary">返回</button>
+          <button id="pin-confirm" class="btn btn-primary">確認</button>
+        </div>
+        <p id="pin-error" class="error hidden">密碼唔啱，請再試過</p>
+      </div>
+      <button id="admin-entry" class="btn-link">管理員登入</button>
+    </div>
+  </div>
+
+  <!-- Admin Login -->
+  <div id="admin-login-screen" class="screen">
+    <div class="login-card">
+      <h1>管理員登入</h1>
+      <div class="pin-input-group">
+        <input type="password" id="admin-pin" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="管理員密碼">
+      </div>
+      <div class="pin-actions">
+        <button id="admin-cancel" class="btn btn-secondary">返回</button>
+        <button id="admin-confirm" class="btn btn-primary">登入</button>
+      </div>
+      <p id="admin-error" class="error hidden">密碼唔啱</p>
+    </div>
+  </div>
+
+  <!-- Admin Panel -->
+  <div id="admin-screen" class="screen">
+    <div class="admin-panel">
+      <div class="admin-header">
+        <h1>員工管理</h1>
+        <button id="admin-logout" class="btn btn-secondary">登出</button>
+      </div>
+      <div class="admin-section">
+        <h2>加入新員工</h2>
+        <div class="add-form">
+          <input type="text" id="new-name" placeholder="員工名稱" maxlength="20">
+          <input type="password" id="new-pin" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="設定密碼">
+          <button id="add-employee" class="btn btn-primary">加入</button>
+        </div>
+        <p id="add-error" class="error hidden"></p>
+      </div>
+      <div class="admin-section">
+        <h2>現有員工</h2>
+        <div id="admin-employee-list" class="admin-list"></div>
+      </div>
+      <div class="admin-section">
+        <h2>匯出資料</h2>
+        <p style="color:var(--text-secondary);font-size:14px;margin-bottom:12px">將所有打卡記錄匯出為 CSV 檔案，可以喺 Excel 開</p>
+        <button id="export-csv" class="btn btn-primary">匯出 CSV</button>
+      </div>
+      <button id="back-to-login" class="btn btn-secondary" style="margin-top:16px">返回登入頁</button>
+    </div>
+  </div>
+
+  <!-- Main App (after login) -->
+  <div id="main-screen" class="screen">
+    <div class="main-header">
+      <span id="greeting"></span>
+      <button id="logout-btn" class="btn btn-secondary btn-sm">登出</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="today">今日概覽</button>
+      <button class="tab" data-tab="clock">打卡</button>
+      <button class="tab" data-tab="records">記錄</button>
+    </div>
+
+    <!-- Today Overview Tab -->
+    <div id="tab-today" class="tab-content active">
+      <div class="records-section">
+        <div class="today-header">
+          <h2 id="today-summary-date"></h2>
+          <button id="today-refresh" class="btn btn-secondary btn-sm">重新整理</button>
+        </div>
+        <div id="today-employees" class="today-list"></div>
+        <p id="no-today" class="no-records hidden">今日暫時冇員工打卡</p>
+      </div>
+    </div>
+
+    <!-- Clock Tab -->
+    <div id="tab-clock" class="tab-content">
+      <div class="clock-section">
+        <p id="today-date" class="date-display"></p>
+        <div id="status-display" class="status-display">
+          <p id="clock-status"></p>
+          <p id="clock-time" class="clock-time"></p>
+        </div>
+        <button id="clock-btn" class="clock-btn">
+          <span id="clock-btn-text">上班</span>
+        </button>
+        <p id="clock-msg" class="clock-msg"></p>
+      </div>
+    </div>
+
+    <!-- Records Tab -->
+    <div id="tab-records" class="tab-content">
+      <div class="records-section">
+        <div class="records-filter">
+          <button id="period-week" class="btn btn-primary btn-sm">今週</button>
+          <button id="period-month" class="btn btn-secondary btn-sm">今個月</button>
+          <button id="period-custom" class="btn btn-secondary btn-sm">自訂</button>
+        </div>
+        <div id="custom-range" class="custom-range hidden">
+          <input type="date" id="range-from">
+          <span>至</span>
+          <input type="date" id="range-to">
+          <button id="range-apply" class="btn btn-primary btn-sm">查閱</button>
+        </div>
+        <div id="records-table-wrap" class="records-table-wrap">
+          <table id="records-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>上班時間</th>
+                <th>下班時間</th>
+                <th>時數</th>
+              </tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+          <p id="no-records" class="no-records hidden">暫時冇記錄</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
