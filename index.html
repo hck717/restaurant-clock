@@ -7,26 +7,6 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Setup Screen (first time) -->
-  <div id="setup-screen" class="screen">
-    <div class="login-card">
-      <div class="login-logo">🍜</div>
-      <h1>連接數據庫</h1>
-      <p class="subtitle">第一次用需要設定數據庫</p>
-      <div class="setup-form">
-        <div>
-          <label>Cloudflare Worker URL</label>
-          <input type="text" id="setup-url" placeholder="https://xxxx.workers.dev" autocapitalize="off">
-        </div>
-        <button id="setup-save" class="btn btn-primary">儲存並開始</button>
-        <p id="setup-error" class="error hidden"></p>
-      </div>
-      <div class="setup-tip">
-        💡 喺 <b>cloudflare.com</b> 免費開 account，整一個 Worker，貼上 <b>cloudflare-worker/worker.js</b> 嘅內容，加一個名為 <b>GITHUB_TOKEN</b> 嘅 secret，再撳 Deploy。然後攞返佢俾你嘅 <b>*.workers.dev</b> 網址貼喺上面。
-      </div>
-    </div>
-  </div>
-
   <!-- Login Screen -->
   <div id="login-screen" class="screen">
     <div class="login-card">

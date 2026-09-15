@@ -1,18 +1,23 @@
 (() => {
   const ADMIN_PIN = "0000";
-  const LS_CONFIG = "rc_worker_config";
+  const LS_EMPLOYEES = "rc_employees";
+  const LS_RECORDS = "rc_records";
   const LS_SESSION = "rc_session";
 
-  let config = null;
-  let state = { employees: [], records: [] };
+  let employees = JSON.parse(localStorage.getItem(LS_EMPLOYEES) || "[]");
+  let records = JSON.parse(localStorage.getItem(LS_RECORDS) || "[]");
   let currentEmpId = null;
   let todayTimer = null;
-  let saveChain = Promise.resolve();
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
   // ---- HELPERS ----
+  function save() {
+    localStorage.setItem(LS_EMPLOYEES, JSON.stringify(employees));
+    localStorage.setItem(LS_RECORDS, JSON.stringify(records));
+  }
+
   function todayStr() {
     return new Date().toLocaleDateString("sv-SE");
   }
@@ -54,79 +59,15 @@
     return (name || "?").trim().charAt(0).toUpperCase();
   }
 
-  // ---- CONFIG / SETUP ----
-  function loadConfig() {
-    try {
-      config = JSON.parse(localStorage.getItem(LS_CONFIG) || "null");
-    } catch {
-      config = null;
-    }
-    return config;
-  }
-
-  function showSetupScreen() {
-    if (config) {
-      $("#setup-url").value = config.url;
-    }
-    showScreen("setup-screen");
-  }
-
-  $("#setup-save").onclick = async () => {
-    const url = $("#setup-url").value.trim();
-    const err = $("#setup-error");
-
-    if (!url) {
-      err.textContent = "請填寫 Cloudflare Worker 嘅 URL";
-      err.classList.remove("hidden");
-      return;
-    }
-
-    config = { url };
-    localStorage.setItem(LS_CONFIG, JSON.stringify(config));
-
-    try {
-      await loadData();
-      enterApp();
-    } catch (e) {
-      err.textContent = "連接唔到 Worker，請檢查 URL";
-      err.classList.remove("hidden");
-    }
-  };
-
-  // ---- WORKER DATA ----
-  async function loadData() {
-    const res = await fetch(config.url, { method: "GET" });
-    if (!res.ok) throw new Error("load failed");
-    const data = await res.json();
-    state.employees = Array.isArray(data.employees) ? data.employees : [];
-    state.records = Array.isArray(data.records) ? data.records : [];
-  }
-
-  function saveData() {
-    saveChain = saveChain.then(async () => {
-      try {
-        const res = await fetch(config.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(state),
-        });
-        if (!res.ok) throw new Error("save failed");
-      } catch (e) {
-        console.warn("Save failed, will retry on next change", e);
-      }
-    });
-    return saveChain;
-  }
-
   // ---- LOGIN ----
   function renderEmployees() {
     const grid = $("#employee-list");
     grid.innerHTML = "";
-    if (state.employees.length === 0) {
-      grid.innerHTML = '<p style="color:var(--text-secondary)">暫時未有員工，請聯絡管理員</p>';
+    if (employees.length === 0) {
+      grid.innerHTML = '<p style="color:var(--text-secondary)">暫時未有員工，請聯絡管理員先（底㩒「管理員登入」）</p>';
       return;
     }
-    state.employees.forEach((emp) => {
+    employees.forEach((emp) => {
       const btn = document.createElement("button");
       btn.className = "emp-btn";
       const avatar = document.createElement("div");
@@ -160,12 +101,12 @@
   };
 
   $("#pin-confirm").onclick = () => {
-    const emp = state.employees.find((e) => e.id === currentEmpId);
+    const emp = employees.find((e) => e.id === currentEmpId);
     if (emp && emp.pin === $("#pin-input").value) {
       $("#pin-section").classList.add("hidden");
       $("#employee-list").classList.remove("hidden");
       $("#admin-entry").classList.remove("hidden");
-      localStorage.setItem(LS_SESSION, JSON.stringify({ empId: emp.id, role: "employee" }));
+      localStorage.setItem(LS_SESSION, JSON.stringify({ empId: emp.id }));
       loginAs(emp);
     } else {
       $("#pin-error").classList.remove("hidden");
@@ -207,11 +148,11 @@
   function renderAdminList() {
     const list = $("#admin-employee-list");
     list.innerHTML = "";
-    if (state.employees.length === 0) {
+    if (employees.length === 0) {
       list.innerHTML = '<p style="color:var(--text-secondary);padding:8px">未有員工</p>';
       return;
     }
-    state.employees.forEach((emp) => {
+    employees.forEach((emp) => {
       const div = document.createElement("div");
       div.className = "admin-emp-item";
       div.innerHTML = `<span>${emp.name}</span>`;
@@ -220,9 +161,9 @@
       delBtn.textContent = "刪除";
       delBtn.onclick = () => {
         if (confirm(`確定要刪除「${emp.name}」？`)) {
-          state.employees = state.employees.filter((e) => e.id !== emp.id);
-          state.records = state.records.filter((r) => r.employeeId !== emp.id);
-          saveData();
+          employees = employees.filter((e) => e.id !== emp.id);
+          records = records.filter((r) => r.employeeId !== emp.id);
+          save();
           renderAdminList();
         }
       };
@@ -246,14 +187,14 @@
       err.classList.remove("hidden");
       return;
     }
-    if (state.employees.some((e) => e.name === name)) {
+    if (employees.some((e) => e.name === name)) {
       err.textContent = "已經有同名員工";
       err.classList.remove("hidden");
       return;
     }
 
-    state.employees.push({ id: Date.now().toString(), name, pin });
-    saveData();
+    employees.push({ id: Date.now().toString(), name, pin });
+    save();
     renderAdminList();
     $("#new-name").value = "";
     $("#new-pin").value = "";
@@ -271,15 +212,15 @@
 
   // ---- CSV EXPORT ----
   $("#export-csv").onclick = () => {
-    if (state.records.length === 0) {
+    if (records.length === 0) {
       alert("暫時冇記錄可以匯出");
       return;
     }
 
     const empMap = {};
-    state.employees.forEach((e) => { empMap[e.id] = e.name; });
+    employees.forEach((e) => { empMap[e.id] = e.name; });
 
-    const sorted = [...state.records].sort((a, b) => {
+    const sorted = [...records].sort((a, b) => {
       const cmp = a.date.localeCompare(b.date);
       if (cmp !== 0) return cmp;
       return (a.clockIn || "").localeCompare(b.clockIn || "");
@@ -343,7 +284,7 @@
   }
 
   // ---- TODAY OVERVIEW ----
-  async function renderToday() {
+  function renderToday() {
     const today = todayStr();
     const d = new Date();
     const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
@@ -354,13 +295,7 @@
     const noRec = $("#no-today");
     container.innerHTML = "";
 
-    try {
-      await loadData();
-    } catch {
-      // keep stale data on network failure
-    }
-
-    const todayRecs = state.records.filter((r) => r.date === today);
+    const todayRecs = records.filter((r) => r.date === today);
 
     if (todayRecs.length === 0) {
       noRec.classList.remove("hidden");
@@ -369,7 +304,7 @@
     noRec.classList.add("hidden");
 
     const empMap = {};
-    state.employees.forEach((e) => { empMap[e.id] = e.name; });
+    employees.forEach((e) => { empMap[e.id] = e.name; });
 
     const nameSorted = [...todayRecs].sort((a, b) => {
       const na = empMap[a.employeeId] || "";
@@ -464,7 +399,7 @@
 
     btn.classList.remove("clocked-in", "done");
 
-    const todayRec = state.records.find(
+    const todayRec = records.find(
       (r) => r.employeeId === currentEmpId && r.date === today
     );
 
@@ -495,12 +430,12 @@
     const btn = $("#clock-btn");
     if (btn.classList.contains("done")) return;
 
-    let todayRec = state.records.find(
+    let todayRec = records.find(
       (r) => r.employeeId === currentEmpId && r.date === today
     );
 
     if (!todayRec) {
-      state.records.push({
+      records.push({
         employeeId: currentEmpId,
         date: today,
         clockIn: new Date().toISOString(),
@@ -514,7 +449,7 @@
       return;
     }
 
-    saveData();
+    save();
     setTimeout(renderClockTab, 500);
   };
 
@@ -544,7 +479,7 @@
     const fromStr = from.toLocaleDateString("sv-SE");
     const toStr = to.toLocaleDateString("sv-SE");
 
-    const empRecs = state.records
+    const empRecs = records
       .filter(
         (r) =>
           r.employeeId === currentEmpId &&
@@ -604,12 +539,12 @@
   }
 
   // ---- ENTRY ----
-  async function enterApp() {
+  function enterApp() {
     renderEmployees();
 
     const session = JSON.parse(localStorage.getItem(LS_SESSION) || "null");
     if (session && session.empId) {
-      const emp = state.employees.find((e) => e.id === session.empId);
+      const emp = employees.find((e) => e.id === session.empId);
       if (emp) {
         loginAs(emp);
         return;
@@ -619,13 +554,5 @@
   }
 
   // ---- INIT ----
-  const cfg = loadConfig();
-  if (cfg && cfg.url) {
-    config = cfg;
-    loadData()
-      .then(enterApp)
-      .catch(() => showSetupScreen());
-  } else {
-    showSetupScreen();
-  }
+  enterApp();
 })();
